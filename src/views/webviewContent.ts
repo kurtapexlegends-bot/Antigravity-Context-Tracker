@@ -432,12 +432,17 @@ export function getWebviewContent(analysis: AnalysisResult | null): string {
       const t = data.tokens || {};
       const total = t.totalTokens || 0;
       const limit = t.limitTokens || 1000000;
+      const limitFormatted = limit >= 1000000 
+        ? (limit / 1000000).toFixed(1) + 'M'
+        : (limit / 1000).toFixed(0) + 'k';
+      
       const sysPct = ((t.systemPromptTokens || 0) / limit) * 100;
       const userPct = ((t.userPromptTokens || 0) / limit) * 100;
       const modelPct = ((t.modelOutputTokens || 0) / limit) * 100;
       const toolPct = ((t.toolOutputTokens || 0) / limit) * 100;
 
       const riskClass = 'risk-' + (data.riskLevel || 'LOW');
+
 
       const filesHtml = (data.activeFiles || []).map(f => \`
         <div class="file-card" title="\${f.path}">
@@ -465,8 +470,9 @@ export function getWebviewContent(analysis: AnalysisResult | null): string {
           <div class="brand-row">
             <div class="brand-title">
               ⚡ Context Tracker
-              <span class="version-tag">v0.3.0</span>
+              <span class="version-tag">v0.3.1</span>
             </div>
+
             <div class="live-badge">
               <span class="live-dot"></span>
               LIVE STREAM
@@ -493,8 +499,9 @@ export function getWebviewContent(analysis: AnalysisResult | null): string {
           </div>
           <div class="gauge-metrics">
             <span class="tokens-value">\${total.toLocaleString()}</span>
-            <span class="tokens-max">/ \${(limit/1000000).toFixed(1)}M max tokens</span>
+            <span class="tokens-max">/ \${limitFormatted} max tokens</span>
           </div>
+
           <div class="progress-bar-container">
             <div class="threshold-indicator" title="70% Hallucination Risk Threshold"></div>
             <div class="progress-seg seg-system" style="width: \${sysPct}%" title="System Rules: \${(t.systemPromptTokens || 0).toLocaleString()}"></div>

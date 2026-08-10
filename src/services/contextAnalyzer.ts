@@ -1,4 +1,5 @@
 import { TranscriptStep, ConversationSession } from './transcriptWatcher';
+import { ModelDetector, ModelCapability } from './modelDetector';
 import * as path from 'path';
 
 export type RiskLevel = 'LOW' | 'MODERATE' | 'HIGH';
@@ -32,6 +33,7 @@ export interface AnalysisResult {
   activeFiles: ReferencedFile[];
   toolStats: ToolUsageStat[];
   modelName: string;
+  modelCapability: ModelCapability;
   riskLevel: RiskLevel;
   riskMessage: string;
   stepsSummary: Array<{
@@ -45,9 +47,11 @@ export interface AnalysisResult {
 }
 
 export class ContextAnalyzer {
-  private static DEFAULT_LIMIT = 1000000; // 1M tokens default for Gemini
-
   public static analyze(steps: TranscriptStep[], session: ConversationSession): AnalysisResult {
+    // 1. Dynamically detect active model & max context capability limit
+    const capability = ModelDetector.detectModel(steps);
+    const limitTokens = capability.limitTokens;
+
     let userPromptTokens = 0;
     let modelOutputTokens = 0;
     let toolOutputTokens = 0;
@@ -59,9 +63,6 @@ export class ContextAnalyzer {
     const toolMap = new Map<string, number>();
     const stepsSummary: AnalysisResult['stepsSummary'] = [];
 
-    let modelName = 'Gemini 3.6 Flash';
-
-    // File path regex compiled once
     const fileRegex = /(?:[A-Za-z]:[\\/][^:*?"<>|\r\n\s]+\.[a-zA-Z0-9]+|file:\/\/\/[^:*?"<>|\r\n\s]+\.[a-zA-Z0-9]+)/g;
 
     for (let i = 0; i < steps.length; i++) {
@@ -82,10 +83,6 @@ export class ContextAnalyzer {
         toolOutputTokens += estimatedTokens;
       }
 
-      if (contentStr.includes('Gemini Pro') || contentStr.includes('gemini-pro')) {
-        modelName = 'Gemini 3.6 Pro';
-      }
-
       const toolNames: string[] = [];
       if (step.tool_calls && Array.isArray(step.tool_calls)) {
         for (const tc of step.tool_calls) {
@@ -99,11 +96,10 @@ export class ContextAnalyzer {
         }
       }
 
-      if (contentStr.length < 5000) { // skip file scanning on massive text blobs to remain super lightweight
+      if (contentStr.length < 5000) {
         this.extractFilesFromText(contentStr, fileMap, fileRegex);
       }
 
-      // Keep step snippet lightweight
       let snippet = contentStr.replace(/[\r\n]+/g, ' ');
       if (snippet.length > 120) {
         snippet = snippet.substring(0, 120) + '...';
@@ -120,22 +116,18 @@ export class ContextAnalyzer {
     }
 
     const totalTokens = systemPromptTokens + userPromptTokens + modelOutputTokens + toolOutputTokens;
-    const percentageUsed = Math.min(100, Math.round((totalTokens / this.DEFAULT_LIMIT) * 1000) / 10);
+    const percentageUsed = Math.min(100, Math.round((totalTokens / limitTokens) * 1000) / 10);
 
-    // Determine Hallucination Risk Level & Recommendation Threshold
-    // Thresholds based on LLM attention density & Needle-In-A-Haystack research:
-    // < 50%: LOW (High reasoning accuracy, sharp recall)
-    // 50% - 70%: MODERATE (Attention dilution starts; details may be skipped)
-    // > 70%: HIGH (Context saturation; model is prone to hallucinations & loss of focus)
+    // Calculate Hallucination Risk Level relative to detected model capability limit
     let riskLevel: RiskLevel = 'LOW';
-    let riskMessage = '🟢 Low Risk: Optimal context recall & reasoning precision.';
+    let riskMessage = `🟢 Low Risk: Optimal context recall & reasoning precision for ${capability.modelName}.`;
 
     if (percentageUsed >= 70) {
       riskLevel = 'HIGH';
-      riskMessage = '🔴 High Risk (>70% capacity): Model is prone to hallucinations and detail loss. Start a new chat session!';
+      riskMessage = `🔴 High Risk (>70% of ${this.formatTokenCount(limitTokens)}): ${capability.modelName} is prone to hallucinations. Compact session!`;
     } else if (percentageUsed >= 50) {
       riskLevel = 'MODERATE';
-      riskMessage = '🟡 Moderate Risk (50-70% capacity): Attention density diluting. Keep prompts concise.';
+      riskMessage = `🟡 Moderate Risk (50-70% of ${this.formatTokenCount(limitTokens)}): Attention density dilutes beyond ${this.formatTokenCount(Math.floor(limitTokens * 0.5))}.`;
     }
 
     const activeFiles: ReferencedFile[] = Array.from(fileMap.entries())
@@ -155,7 +147,8 @@ export class ContextAnalyzer {
       sessionId: session.id,
       lastUpdated: new Date().toLocaleTimeString(),
       stepCount: steps.length,
-      modelName,
+      modelName: capability.modelName,
+      modelCapability: capability,
       riskLevel,
       riskMessage,
       tokens: {
@@ -164,13 +157,20 @@ export class ContextAnalyzer {
         modelOutputTokens,
         toolOutputTokens,
         totalTokens,
-        limitTokens: this.DEFAULT_LIMIT,
+        limitTokens,
         percentageUsed
       },
       activeFiles,
       toolStats,
       stepsSummary: stepsSummary.reverse()
     };
+  }
+
+  private static formatTokenCount(tokens: number): string {
+    if (tokens >= 1000000) {
+      return (tokens / 1000000).toFixed(1) + 'M tokens';
+    }
+    return Math.round(tokens / 1000) + 'k tokens';
   }
 
   private static extractFilesFromText(text: string, fileMap: Map<string, number>, regex: RegExp) {
