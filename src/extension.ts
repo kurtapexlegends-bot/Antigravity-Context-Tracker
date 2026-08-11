@@ -11,7 +11,7 @@ let sidebarProvider: ContextSidebarProvider;
 let latestAnalysis: AnalysisResult | null = null;
 
 export function activate(context: vscode.ExtensionContext) {
-  console.log('Antigravity Context Tracker Extension v0.3.0 active!');
+  console.log('Antigravity Context Tracker Extension v0.3.2 active!');
 
   watcher = new TranscriptWatcher();
   statusBar = new ContextStatusBarItem();
@@ -45,7 +45,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   watcher.startWatching();
 
-  // Listen to tab switching and window focus to auto-detect active opened conversation tab
+  // Listen to active tab changes in editor to auto-detect active opened conversation tab
   context.subscriptions.push(
     vscode.window.onDidChangeActiveTextEditor(editor => {
       if (editor && editor.document) {
@@ -55,7 +55,7 @@ export function activate(context: vscode.ExtensionContext) {
           const relative = filePath.substring(brainDir.length).replace(/^[/\\]/, '');
           const sessionId = relative.split(/[/\\]/)[0];
           if (sessionId && sessionId.length > 10) {
-            watcher.setActiveSessionId(sessionId);
+            watcher.setActiveSessionId(sessionId, true);
             return;
           }
         }
@@ -79,7 +79,7 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.window.showInformationMessage('Antigravity Context Tracker refreshed!');
   });
 
-  // Command: Compact Session In-Place (v0.3.0)
+  // Command: Compact Session In-Place (Atomic & Safe)
   const compactCmd = vscode.commands.registerCommand('antigravity-context.compactSession', async () => {
     const { steps, session } = watcher.readActiveSteps();
     if (!session || !latestAnalysis) {
@@ -87,7 +87,7 @@ export function activate(context: vscode.ExtensionContext) {
       return;
     }
 
-    // Perform in-place transcript log compaction on disk
+    // Perform atomic in-place transcript log compaction on disk
     const compaction = ContextCompacter.compactInPlace(steps, session, latestAnalysis);
 
     // Instantly refresh watcher state
@@ -101,7 +101,7 @@ export function activate(context: vscode.ExtensionContext) {
     await vscode.window.showTextDocument(doc);
 
     vscode.window.showInformationMessage(
-      `⚡ Current tab compacted in-place! Reclaimed ${compaction.reclaimedTokens.toLocaleString()} tokens (${compaction.reclaimedPercentage}% reduction). Backup saved.`
+      `⚡ Current tab compacted safely! Reclaimed ${compaction.reclaimedTokens.toLocaleString()} tokens (${compaction.reclaimedPercentage}% reduction). Backup saved at ${compaction.backupPath}`
     );
   });
 
@@ -120,7 +120,7 @@ export function activate(context: vscode.ExtensionContext) {
     await vscode.window.showTextDocument(doc);
   });
 
-  // Command: Select Session
+  // Command: Select Session (User Pinned)
   const selectSessionCmd = vscode.commands.registerCommand('antigravity-context.selectSession', async () => {
     const sessions = watcher.listSessions();
     if (sessions.length === 0) {
@@ -140,7 +140,7 @@ export function activate(context: vscode.ExtensionContext) {
     });
 
     if (selected) {
-      watcher.setActiveSessionId(selected.session.id);
+      watcher.setActiveSessionId(selected.session.id, true);
       vscode.window.showInformationMessage(`Tracking context for session: ${selected.session.id}`);
     }
   });

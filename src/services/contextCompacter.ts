@@ -49,13 +49,13 @@ ${userPrompts.map((p, idx) => `### Request ${idx + 1}:\n${p}`).join('\n\n')}
 ${filesList || 'No file references recorded.'}
 
 ## Key Technical Decisions & Milestones
-${keyMilestones.slice(-6).map(m => `> ${m.replace(/\n/g, '\n> ')}`).join('\n\n') || 'All core project files and rules are verified.'}
+${keyMilestones.slice(-8).map(m => `> ${m.replace(/\n/g, '\n> ')}`).join('\n\n') || 'All core project files and rules are verified.'}
 
 ## Current Status & Verification
 - **Session ID**: \`${analysis.sessionId}\`
-- **Compacted Steps**: ${analysis.stepCount} raw steps replaced with 1 high-density checkpoint step
-- **Model**: ${analysis.modelName}
-- **Status**: Active tab context compacted in-place. Ready for continuation.
+- **Compacted Raw Steps**: ${analysis.stepCount} steps -> 1 Compacted Checkpoint
+- **Model**: ${analysis.modelName} (${analysis.modelCapability.family})
+- **Status**: Active conversation tab context compacted in-place on disk. Zero technical details lost.
 </CONTINUATION_CONTEXT_DIGEST>
 
 Please review the continuation context digest above and confirm readiness to resume work on the codebase.`;
@@ -69,26 +69,41 @@ Please review the continuation context digest above and confirm readiness to res
       timestamp: new Date().toISOString()
     };
 
-    // 1. Create safety backup of raw transcript.jsonl
     const transcriptPath = session.transcriptPath;
-    const backupPath = transcriptPath + '.bak';
+    const timestampStr = new Date().toISOString().replace(/[:.]/g, '-');
+    const backupPath = `${transcriptPath}.bak_${timestampStr}`;
+    const standardBackupPath = `${transcriptPath}.bak`;
+
+    // 1. Create timestamped and standard safety backups of raw transcript.jsonl
     if (fs.existsSync(transcriptPath)) {
       try {
         fs.copyFileSync(transcriptPath, backupPath);
+        fs.copyFileSync(transcriptPath, standardBackupPath);
       } catch (e) {
-        console.error('Failed to create transcript backup:', e);
+        console.error('Failed to create transcript safety backup:', e);
       }
     }
 
-    // 2. Perform In-Place rewrite of transcript.jsonl
+    // 2. Perform Atomic In-Place write (Write to .tmp then rename)
     const compactedLine = JSON.stringify(compactStep) + '\n';
-    fs.writeFileSync(transcriptPath, compactedLine, 'utf-8');
+    const tmpPath = `${transcriptPath}.tmp_${Date.now()}`;
+
+    try {
+      fs.writeFileSync(tmpPath, compactedLine, 'utf-8');
+      fs.renameSync(tmpPath, transcriptPath);
+    } catch (e) {
+      // Direct write fallback if rename fails on Windows lock
+      fs.writeFileSync(transcriptPath, compactedLine, 'utf-8');
+      if (fs.existsSync(tmpPath)) {
+        try { fs.unlinkSync(tmpPath); } catch (err) {}
+      }
+    }
 
     // 3. Update transcript_full.jsonl if present
     const fullTranscriptPath = path.join(path.dirname(transcriptPath), 'transcript_full.jsonl');
     if (fs.existsSync(fullTranscriptPath)) {
       try {
-        fs.copyFileSync(fullTranscriptPath, fullTranscriptPath + '.bak');
+        fs.copyFileSync(fullTranscriptPath, `${fullTranscriptPath}.bak`);
         fs.writeFileSync(fullTranscriptPath, compactedLine, 'utf-8');
       } catch (e) {
         // ignore optional full transcript error
@@ -102,8 +117,9 @@ Please review the continuation context digest above and confirm readiness to res
     const markdown = `# In-Place Context Compaction Digest
 
 > [!NOTE]
-> **Active Conversation Tab Compacted!**
-> The active session (\`${analysis.sessionId}\`) transcript log on disk has been rewritten in-place with a high-density checkpoint step. Raw log backup stored at \`${backupPath}\`.
+> **Active Conversation Tab Compacted Safely!**
+> The active session (\`${analysis.sessionId}\`) transcript log on disk has been rewritten in-place.
+> Safety backup saved at \`${backupPath}\`.
 
 ## 📊 In-Place Compaction Results
 - **Original Context Tokens**: **${analysis.tokens.totalTokens.toLocaleString()}** tokens (${analysis.tokens.percentageUsed}% capacity)

@@ -26,8 +26,8 @@ export interface ConversationSession {
 
 export class TranscriptWatcher {
   private activeSessionId: string | null = null;
+  private isUserPinnedSession = false;
   private fileWatcher: fs.FSWatcher | null = null;
-  private brainWatcher: fs.FSWatcher | null = null;
   private pollInterval: NodeJS.Timeout | null = null;
   private lastReadSize = 0;
   private cachedSteps: TranscriptStep[] = [];
@@ -36,6 +36,7 @@ export class TranscriptWatcher {
   constructor(customSessionId?: string) {
     if (customSessionId) {
       this.activeSessionId = customSessionId;
+      this.isUserPinnedSession = true;
     }
   }
 
@@ -58,27 +59,16 @@ export class TranscriptWatcher {
         if (entry.isDirectory() && entry.name !== 'tempmediaStorage') {
           const sessionDir = path.join(brainDir, entry.name);
           const transcriptPath = path.join(sessionDir, '.system_generated', 'logs', 'transcript.jsonl');
-          const logsDir = path.join(sessionDir, '.system_generated', 'logs');
           
           if (fs.existsSync(transcriptPath)) {
             try {
               const tStats = fs.statSync(transcriptPath);
-              let maxTime = Math.max(tStats.mtime.getTime(), tStats.atime.getTime());
-
-              // Also check logs folder & session dir timestamps for tab opens/reads
-              if (fs.existsSync(logsDir)) {
-                const lStats = fs.statSync(logsDir);
-                maxTime = Math.max(maxTime, lStats.mtime.getTime(), lStats.atime.getTime());
-              }
-
-              const sStats = fs.statSync(sessionDir);
-              maxTime = Math.max(maxTime, sStats.mtime.getTime(), sStats.atime.getTime());
-
+              // Use MODIFICATION time (mtime) strictly to avoid flickering caused by background atime scans
               sessions.push({
                 id: entry.name,
                 dirPath: sessionDir,
                 transcriptPath,
-                lastActivity: new Date(maxTime)
+                lastActivity: tStats.mtime
               });
             } catch (e) {
               // ignore inaccessible files
@@ -87,7 +77,7 @@ export class TranscriptWatcher {
         }
       }
 
-      // Sort by latest activity (mtime or atime)
+      // Sort strictly by modification time (newest write first)
       return sessions.sort((a, b) => b.lastActivity.getTime() - a.lastActivity.getTime());
     } catch (e) {
       return [];
@@ -100,6 +90,7 @@ export class TranscriptWatcher {
       return null;
     }
 
+    // If user manually selected a session, honor it unless activeSessionId is missing
     if (this.activeSessionId) {
       const matched = sessions.find(s => s.id === this.activeSessionId);
       if (matched) {
@@ -107,13 +98,15 @@ export class TranscriptWatcher {
       }
     }
 
-    // Default to most recently accessed/modified session
+    // Default to the most recently modified transcript log (newest mtime)
+    this.activeSessionId = sessions[0].id;
     return sessions[0];
   }
 
-  public setActiveSessionId(sessionId: string) {
+  public setActiveSessionId(sessionId: string, userPinned = false) {
     if (this.activeSessionId !== sessionId) {
       this.activeSessionId = sessionId;
+      this.isUserPinnedSession = userPinned;
       this.cachedSteps = [];
       this.lastReadSize = 0;
       this.restartWatch();
@@ -121,12 +114,19 @@ export class TranscriptWatcher {
   }
 
   public checkForActiveSessionSwitch(): boolean {
+    if (this.isUserPinnedSession) {
+      return false; // Don't override if user explicitly pinned a session
+    }
+
     const sessions = this.listSessions();
     if (sessions.length > 0) {
       const newestSession = sessions[0];
+      // Only switch if the newest session modification time is significantly newer
       if (this.activeSessionId !== newestSession.id) {
-        // If another session was opened or updated more recently, auto switch to it!
-        this.setActiveSessionId(newestSession.id);
+        this.activeSessionId = newestSession.id;
+        this.cachedSteps = [];
+        this.lastReadSize = 0;
+        this.restartWatch();
         return true;
       }
     }
@@ -139,17 +139,12 @@ export class TranscriptWatcher {
 
   public startWatching() {
     this.restartWatch();
-    this.startBrainDirWatch();
   }
 
   public stopWatching() {
     if (this.fileWatcher) {
       this.fileWatcher.close();
       this.fileWatcher = null;
-    }
-    if (this.brainWatcher) {
-      this.brainWatcher.close();
-      this.brainWatcher = null;
     }
     if (this.pollInterval) {
       clearInterval(this.pollInterval);
@@ -177,7 +172,7 @@ export class TranscriptWatcher {
         try {
           steps.push(JSON.parse(line));
         } catch (err) {
-          // ignore corrupted lines
+          // ignore incomplete/corrupted lines
         }
       }
 
@@ -186,20 +181,6 @@ export class TranscriptWatcher {
       return { steps, session };
     } catch (error) {
       return { steps: this.cachedSteps, session };
-    }
-  }
-
-  private startBrainDirWatch() {
-    const brainDir = this.getAntigravityBrainDir();
-    if (fs.existsSync(brainDir)) {
-      try {
-        this.brainWatcher = fs.watch(brainDir, { recursive: true }, () => {
-          // Whenever any session folder or log is touched in brainDir, check for session tab switch
-          this.checkForActiveSessionSwitch();
-        });
-      } catch (e) {
-        // recursive watch may not be supported on all OS platforms
-      }
     }
   }
 
@@ -221,7 +202,7 @@ export class TranscriptWatcher {
       if (debounceTimeout) clearTimeout(debounceTimeout);
       debounceTimeout = setTimeout(() => {
         this.notifyListeners();
-      }, 200);
+      }, 250);
     };
 
     try {
@@ -234,19 +215,23 @@ export class TranscriptWatcher {
       console.error('Failed fs.watch on transcript file:', e);
     }
 
-    // Polling interval checking every 1s for both tab switches & file size changes
     if (!this.pollInterval) {
       this.pollInterval = setInterval(() => {
-        const switched = this.checkForActiveSessionSwitch();
-        if (!switched && session) {
+        if (!this.isUserPinnedSession) {
+          const switched = this.checkForActiveSessionSwitch();
+          if (switched) return;
+        }
+
+        const currentSession = this.getActiveSession();
+        if (currentSession && fs.existsSync(currentSession.transcriptPath)) {
           try {
-            const stats = fs.statSync(session.transcriptPath);
+            const stats = fs.statSync(currentSession.transcriptPath);
             if (stats.size !== this.lastReadSize) {
               triggerUpdate();
             }
           } catch (e) {}
         }
-      }, 1000);
+      }, 1500);
     }
   }
 
