@@ -7,7 +7,7 @@ import { ContextAnalyzer } from '../services/contextAnalyzer';
 import { TranscriptStep, ConversationSession } from '../services/transcriptWatcher';
 
 export function runCompacterTests() {
-  console.log('Running ContextCompacter v0.3.0 in-place unit tests...');
+  console.log('Running ContextCompacter v0.3.3 sliding-window unit tests...');
 
   const tempDir = path.join(os.tmpdir(), 'ag_compactor_test_' + Date.now());
   const logsDir = path.join(tempDir, '.system_generated', 'logs');
@@ -50,8 +50,8 @@ export function runCompacterTests() {
   const analysis = ContextAnalyzer.analyze(mockSteps, mockSession);
   const result = ContextCompacter.compactInPlace(mockSteps, mockSession, analysis);
 
-  assert.ok(result.markdown.includes('In-Place Context Compaction Digest'));
-  assert.ok(result.continuationPrompt.includes('CONTINUATION_CONTEXT_DIGEST'));
+  assert.ok(result.markdown.includes('Level 1 Sliding-Window Context Compaction Digest'));
+  assert.ok(result.continuationPrompt.includes('SLIDING_WINDOW_CONTEXT_DIGEST'));
   assert.ok(fs.existsSync(transcriptPath + '.bak'), 'Backup file should be created');
   assert.ok(result.compactTokens > 0);
 
@@ -60,7 +60,7 @@ export function runCompacterTests() {
     fs.rmSync(tempDir, { recursive: true, force: true });
   } catch (e) {}
 
-  console.log('✅ ContextCompacter v0.3.0 in-place tests passed successfully!');
+  console.log('✅ ContextCompacter v0.3.3 sliding-window tests passed successfully!');
 }
 
 if (require.main === module) {
