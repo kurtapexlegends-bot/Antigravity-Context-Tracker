@@ -2,8 +2,12 @@
   "name": "antigravity-context-tracker",
   "displayName": "Antigravity Active Context Tracker",
   "description": "Tracks, visualizes, compacts, and analyzes active conversation context, token usage, and step timeline in real time for Antigravity IDE and VS Code.",
-  "version": "0.3.3",
+  "version": "0.4.0",
   "publisher": "antigravity",
+  "bin": {
+    "ag-context": "./out/cli.js",
+    "antigravity-context": "./out/cli.js"
+  },
   "engines": {
     "vscode": "^1.75.0"
   },
