@@ -14,37 +14,7 @@ export class ModelDetector {
   public static detectModel(steps: TranscriptStep[]): ModelCapability {
     let rawModelName = '';
 
-    // 1. Try reading from ~/.gemini/settings.json
-    try {
-      const settingsPath = path.join(os.homedir(), '.gemini', 'settings.json');
-      if (fs.existsSync(settingsPath)) {
-        const raw = fs.readFileSync(settingsPath, 'utf-8');
-        const parsed = JSON.parse(raw);
-        if (parsed && parsed.model && parsed.model.name) {
-          rawModelName = parsed.model.name;
-        }
-      }
-    } catch (e) {}
-
-    // 2. Try checking VS Code settings workspace configuration if in extension runtime
-    if (!rawModelName) {
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const vscode = require('vscode');
-        if (vscode && vscode.workspace) {
-          const config = vscode.workspace.getConfiguration('antigravity');
-          const cfgModel = (config.get('model') as string) || (config.get('modelSelection') as string);
-          if (cfgModel) {
-            rawModelName = cfgModel;
-          }
-
-        }
-      } catch (e) {
-        // Ignore if running outside VS Code extension host (e.g. CLI tests)
-      }
-    }
-
-    // 3. Scan transcript steps for latest model selection change or step metadata
+    // 1. Scan transcript steps for latest model selection change or system metadata
     if (steps && steps.length > 0) {
       for (let i = steps.length - 1; i >= 0; i--) {
         const step = steps[i];
@@ -58,14 +28,45 @@ export class ModelDetector {
           break;
         }
 
-        if (contentStr.includes('gemini-3.6-pro') || contentStr.includes('Gemini 3.6 Pro') || contentStr.includes('gemini-3.1-pro')) {
-          if (!rawModelName) rawModelName = 'Gemini 3.6 Pro';
+        // Direct mention in system messages
+        const directMatch = contentStr.match(/Gemini (3\.[0-9]|1\.[0-9]|2\.[0-9]) [A-Za-z0-9 ()]+/i);
+        if (directMatch && directMatch[0]) {
+          rawModelName = directMatch[0].trim();
+          break;
         }
       }
     }
 
+    // 2. Try reading from ~/.gemini/settings.json
     if (!rawModelName) {
-      rawModelName = 'Gemini 3.6 Flash';
+      try {
+        const settingsPath = path.join(os.homedir(), '.gemini', 'settings.json');
+        if (fs.existsSync(settingsPath)) {
+          const raw = fs.readFileSync(settingsPath, 'utf-8');
+          const parsed = JSON.parse(raw);
+          if (parsed && parsed.model && parsed.model.name) {
+            rawModelName = parsed.model.name;
+          }
+        }
+      } catch (e) {}
+    }
+
+    // 3. Try checking VS Code settings workspace configuration if in extension runtime
+    if (!rawModelName) {
+      try {
+        const vscode = require('vscode');
+        if (vscode && vscode.workspace) {
+          const config = vscode.workspace.getConfiguration('antigravity');
+          const cfgModel = (config.get('model') as string) || (config.get('modelSelection') as string);
+          if (cfgModel) {
+            rawModelName = cfgModel;
+          }
+        }
+      } catch (e) {}
+    }
+
+    if (!rawModelName) {
+      rawModelName = 'Gemini 3.7 Flash';
     }
 
     return this.getCapability(rawModelName);
@@ -74,11 +75,25 @@ export class ModelDetector {
   public static getCapability(rawName: string): ModelCapability {
     const lower = rawName.toLowerCase();
 
+    // Clean up internal model keys into human readable names
+    let displayName = rawName;
+    if (lower === 'gemini-3.1-pro-preview' || lower.includes('3.1-pro')) {
+      displayName = 'Gemini 3.1 Pro Preview';
+    } else if (lower.includes('3.7-flash') || lower.includes('3.7 flash')) {
+      displayName = 'Gemini 3.7 Flash';
+    } else if (lower.includes('3.6-flash') || lower.includes('3.6 flash')) {
+      displayName = 'Gemini 3.6 Flash';
+    } else if (lower.includes('3.5-flash') || lower.includes('3.5 flash')) {
+      displayName = 'Gemini 3.5 Flash';
+    } else if (lower.includes('3.6-pro') || lower.includes('3.6 pro')) {
+      displayName = 'Gemini 3.6 Pro';
+    }
+
     // Gemini Pro (2M Tokens)
-    if (lower.includes('pro') || lower.includes('gemini-3.1-pro') || lower.includes('gemini-3.6-pro')) {
-      const limitTokens = 2097152; // 2,097,152 Tokens (2M)
+    if (lower.includes('pro')) {
+      const limitTokens = 2097152; // 2M Tokens
       return {
-        modelName: 'Gemini 3.6 Pro',
+        modelName: displayName,
         limitTokens,
         family: 'Gemini',
         thresholdTokens: Math.floor(limitTokens * 0.70)
@@ -87,9 +102,9 @@ export class ModelDetector {
 
     // Claude 3.5 Sonnet (200k Tokens)
     if (lower.includes('claude') || lower.includes('sonnet')) {
-      const limitTokens = 200000; // 200,000 Tokens (200k)
+      const limitTokens = 200000;
       return {
-        modelName: 'Claude 3.5 Sonnet',
+        modelName: displayName.includes('Sonnet') ? displayName : 'Claude 3.5 Sonnet',
         limitTokens,
         family: 'Anthropic',
         thresholdTokens: Math.floor(limitTokens * 0.70)
@@ -98,9 +113,9 @@ export class ModelDetector {
 
     // GPT-4o (128k Tokens)
     if (lower.includes('gpt-4') || lower.includes('gpt4') || lower.includes('openai')) {
-      const limitTokens = 128000; // 128,000 Tokens (128k)
+      const limitTokens = 128000;
       return {
-        modelName: 'GPT-4o',
+        modelName: displayName.includes('GPT') ? displayName : 'GPT-4o',
         limitTokens,
         family: 'OpenAI',
         thresholdTokens: Math.floor(limitTokens * 0.70)
@@ -109,9 +124,9 @@ export class ModelDetector {
 
     // DeepSeek (128k Tokens)
     if (lower.includes('deepseek')) {
-      const limitTokens = 128000; // 128,000 Tokens (128k)
+      const limitTokens = 128000;
       return {
-        modelName: 'DeepSeek R1/V3',
+        modelName: displayName,
         limitTokens,
         family: 'DeepSeek',
         thresholdTokens: Math.floor(limitTokens * 0.70)
@@ -119,9 +134,9 @@ export class ModelDetector {
     }
 
     // Gemini Flash (Default 1M Tokens)
-    const limitTokens = 1048576; // 1,048,576 Tokens (1M)
+    const limitTokens = 1048576; // 1M Tokens
     return {
-      modelName: rawName.length > 25 ? 'Gemini 3.6 Flash' : rawName,
+      modelName: displayName,
       limitTokens,
       family: 'Gemini',
       thresholdTokens: Math.floor(limitTokens * 0.70)

@@ -68,16 +68,19 @@ export class ContextAnalyzer {
     for (let i = 0; i < steps.length; i++) {
       const step = steps[i];
       const stepType = step.type || 'UNKNOWN';
-      const stepSource = step.source || 'MODEL';
       const contentStr = typeof step.content === 'string' 
         ? step.content 
         : (step.content ? JSON.stringify(step.content) : '');
 
       const estimatedTokens = Math.ceil(contentStr.length / 4);
 
+      // Accurate memory categorization:
+      // USER_INPUT -> User prompt tokens
+      // PLANNER_RESPONSE -> Assistant response tokens
+      // All tool results (VIEW_FILE, RUN_COMMAND, GENERIC, etc.) -> Tool Output Buffers
       if (stepType === 'USER_INPUT') {
         userPromptTokens += estimatedTokens;
-      } else if (stepType === 'PLANNER_RESPONSE' || stepSource === 'MODEL') {
+      } else if (stepType === 'PLANNER_RESPONSE') {
         modelOutputTokens += estimatedTokens;
       } else {
         toolOutputTokens += estimatedTokens;
@@ -108,7 +111,7 @@ export class ContextAnalyzer {
       stepsSummary.push({
         index: step.step_index ?? i,
         type: stepType,
-        source: stepSource,
+        source: step.source || 'MODEL',
         snippet,
         tools: toolNames,
         status: step.status || 'DONE'

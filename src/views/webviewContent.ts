@@ -470,8 +470,9 @@ export function getWebviewContent(analysis: AnalysisResult | null): string {
           <div class="brand-row">
             <div class="brand-title">
               ⚡ Context Tracker
-              <span class="version-tag">v0.3.3</span>
+              <span class="version-tag">v0.4.1</span>
             </div>
+
 
 
 

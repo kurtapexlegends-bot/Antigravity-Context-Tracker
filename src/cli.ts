@@ -16,9 +16,10 @@ const magenta = '\x1b[35m';
 const blue = '\x1b[34m';
 
 function printHeader() {
-  console.log(`\n${bold}${cyan}⚡ ANTIGRAVITY CONTEXT TRACKER CLI${reset} ${dim}v0.4.0${reset}`);
+  console.log(`\n${bold}${cyan}⚡ ANTIGRAVITY CONTEXT TRACKER CLI${reset} ${dim}v0.4.1${reset}`);
   console.log(`${dim}──────────────────────────────────────────────────${reset}`);
 }
+
 
 function printStatus(analysis: AnalysisResult) {
   const t = analysis.tokens;
