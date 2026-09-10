@@ -176,4 +176,56 @@ ${continuationPrompt}
       backupPath
     };
   }
+
+  /**
+   * Safely restore session transcript from the most recent .bak or .bak_<timestamp> file
+   */
+  public static restoreBackup(session: ConversationSession): { success: boolean; message: string; backupFile?: string } {
+    const transcriptPath = session.transcriptPath;
+    const logsDir = path.dirname(transcriptPath);
+
+    if (!fs.existsSync(logsDir)) {
+      return { success: false, message: 'Logs directory not found.' };
+    }
+
+    // Find all backup files for transcript.jsonl
+    const entries = fs.readdirSync(logsDir);
+    const backupFiles = entries
+      .filter(f => f.startsWith('transcript.jsonl.bak'))
+      .map(f => {
+        const full = path.join(logsDir, f);
+        return { file: full, mtime: fs.statSync(full).mtime };
+      })
+      .sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
+
+    if (backupFiles.length === 0) {
+      return { success: false, message: 'No backup files found for this conversation session.' };
+    }
+
+    const latestBackup = backupFiles[0].file;
+    try {
+      // Save current state before restoring just in case
+      fs.copyFileSync(transcriptPath, `${transcriptPath}.pre_restore`);
+      fs.copyFileSync(latestBackup, transcriptPath);
+
+      // Also restore transcript_full.jsonl if backup exists
+      const fullBak = path.join(logsDir, 'transcript_full.jsonl.bak');
+      const fullPath = path.join(logsDir, 'transcript_full.jsonl');
+      if (fs.existsSync(fullBak)) {
+        try { fs.copyFileSync(fullBak, fullPath); } catch (e) {}
+      }
+
+      return {
+        success: true,
+        message: `Successfully restored session from ${path.basename(latestBackup)}!`,
+        backupFile: latestBackup
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        message: `Failed to restore backup: ${err.message}`
+      };
+    }
+  }
 }
+

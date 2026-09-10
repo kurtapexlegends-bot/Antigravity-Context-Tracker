@@ -34,10 +34,13 @@ export class ContextSidebarProvider implements vscode.WebviewViewProvider {
         this._onRefreshRequested();
       } else if (message.command === 'compact') {
         vscode.commands.executeCommand('antigravity-context.compactSession');
+      } else if (message.command === 'undo') {
+        vscode.commands.executeCommand('antigravity-context.restoreBackup');
       } else if (message.command === 'export') {
         vscode.commands.executeCommand('antigravity-context.exportSummary');
       }
     });
+
 
   }
 

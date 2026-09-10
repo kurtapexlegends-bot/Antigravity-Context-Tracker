@@ -79,6 +79,10 @@ export class ModelDetector {
     let displayName = rawName;
     if (lower === 'gemini-3.1-pro-preview' || lower.includes('3.1-pro')) {
       displayName = 'Gemini 3.1 Pro Preview';
+    } else if (lower.includes('3.8-flash') || lower.includes('3.8 flash')) {
+      displayName = 'Gemini 3.8 Flash';
+    } else if (lower.includes('3.8-pro') || lower.includes('3.8 pro')) {
+      displayName = 'Gemini 3.8 Pro';
     } else if (lower.includes('3.7-flash') || lower.includes('3.7 flash')) {
       displayName = 'Gemini 3.7 Flash';
     } else if (lower.includes('3.6-flash') || lower.includes('3.6 flash')) {
@@ -88,6 +92,7 @@ export class ModelDetector {
     } else if (lower.includes('3.6-pro') || lower.includes('3.6 pro')) {
       displayName = 'Gemini 3.6 Pro';
     }
+
 
     // Gemini Pro (2M Tokens)
     if (lower.includes('pro')) {

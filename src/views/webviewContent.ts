@@ -470,11 +470,8 @@ export function getWebviewContent(analysis: AnalysisResult | null): string {
           <div class="brand-row">
             <div class="brand-title">
               ⚡ Context Tracker
-              <span class="version-tag">v0.4.1</span>
+              <span class="version-tag">v0.5.0</span>
             </div>
-
-
-
 
             <div class="live-badge">
               <span class="live-dot"></span>
@@ -486,10 +483,12 @@ export function getWebviewContent(analysis: AnalysisResult | null): string {
             <button class="btn-compact" onclick="compactSession()" title="Compact active conversation tab in-place on disk">
               ⚡ Compact Tab (In-Place)
             </button>
+            <button class="btn-icon" onclick="undoCompaction()" title="Restore Uncompacted History from Backup">↺</button>
             <button class="btn-icon" onclick="refresh()" title="Force Refresh Analytics">↻</button>
             <button class="btn-icon" onclick="exportSummary()" title="Export Summary Markdown">📥</button>
           </div>
         </div>
+
 
         <div class="risk-banner \${riskClass}">
           <div>\${data.riskMessage}</div>
@@ -548,9 +547,14 @@ export function getWebviewContent(analysis: AnalysisResult | null): string {
       vscode.postMessage({ command: 'compact' });
     }
 
+    function undoCompaction() {
+      vscode.postMessage({ command: 'undo' });
+    }
+
     function refresh() {
       vscode.postMessage({ command: 'refresh' });
     }
+
 
     function exportSummary() {
       vscode.postMessage({ command: 'export' });

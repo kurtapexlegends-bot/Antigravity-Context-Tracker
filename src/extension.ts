@@ -105,7 +105,25 @@ export function activate(context: vscode.ExtensionContext) {
     );
   });
 
+  // Command: Restore Backup
+  const restoreCmd = vscode.commands.registerCommand('antigravity-context.restoreBackup', async () => {
+    const session = watcher.getActiveSession();
+    if (!session) {
+      vscode.window.showWarningMessage('No active Antigravity session to restore.');
+      return;
+    }
+
+    const res = ContextCompacter.restoreBackup(session);
+    if (res.success) {
+      handleRefresh();
+      vscode.window.showInformationMessage(`✔ ${res.message}`);
+    } else {
+      vscode.window.showErrorMessage(`✖ ${res.message}`);
+    }
+  });
+
   // Command: Export Summary
+
   const exportCmd = vscode.commands.registerCommand('antigravity-context.exportSummary', async () => {
     if (!latestAnalysis) {
       vscode.window.showWarningMessage('No active conversation context to export.');
@@ -145,8 +163,9 @@ export function activate(context: vscode.ExtensionContext) {
     }
   });
 
-  context.subscriptions.push(statusBar, refreshCmd, compactCmd, exportCmd, selectSessionCmd);
+  context.subscriptions.push(statusBar, refreshCmd, compactCmd, restoreCmd, exportCmd, selectSessionCmd);
 }
+
 
 export function deactivate() {
   if (watcher) {

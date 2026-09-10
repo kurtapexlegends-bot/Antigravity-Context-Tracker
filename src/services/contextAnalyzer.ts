@@ -25,6 +25,16 @@ export interface ToolUsageStat {
   count: number;
 }
 
+export interface BloatItem {
+  stepIndex: number;
+  type: string;
+  tokens: number;
+  snippet: string;
+  toolName?: string;
+  target?: string;
+}
+
+
 export interface AnalysisResult {
   sessionId: string;
   lastUpdated: string;
@@ -188,4 +198,48 @@ export class ContextAnalyzer {
       }
     }
   }
+
+  /**
+   * Identifies top largest token-consuming steps (bloat diagnosis)
+   */
+  public static inspectBloat(steps: TranscriptStep[], topN = 5): BloatItem[] {
+    const items: BloatItem[] = [];
+
+    for (let i = 0; i < steps.length; i++) {
+      const step = steps[i];
+      const contentStr = typeof step.content === 'string'
+        ? step.content
+        : (step.content ? JSON.stringify(step.content) : '');
+
+      const tokens = Math.ceil(contentStr.length / 4);
+
+      let target: string | undefined = undefined;
+      let toolName: string | undefined = undefined;
+
+      if (step.tool_calls && step.tool_calls.length > 0) {
+        const tc = step.tool_calls[0];
+        toolName = tc.name;
+        if (tc.arguments) {
+          target = tc.arguments.TargetFile || tc.arguments.AbsolutePath || tc.arguments.CommandLine || tc.arguments.query;
+        }
+      }
+
+      let snippet = contentStr.replace(/[\r\n]+/g, ' ').trim();
+      if (snippet.length > 100) {
+        snippet = snippet.substring(0, 100) + '...';
+      }
+
+      items.push({
+        stepIndex: step.step_index ?? i,
+        type: step.type || 'UNKNOWN',
+        tokens,
+        snippet,
+        toolName,
+        target: typeof target === 'string' ? target : undefined
+      });
+    }
+
+    return items.sort((a, b) => b.tokens - a.tokens).slice(0, topN);
+  }
 }
+
