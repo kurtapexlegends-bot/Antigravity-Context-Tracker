@@ -6,7 +6,7 @@ import { TranscriptWatcher } from './services/transcriptWatcher';
 import { ContextAnalyzer, AnalysisResult } from './services/contextAnalyzer';
 import { ContextCompacter } from './services/contextCompacter';
 
-// ANSI Color Helpers
+// ANSI Color & Styling Helpers
 const reset = '\x1b[0m';
 const bold = '\x1b[1m';
 const dim = '\x1b[2m';
@@ -17,65 +17,86 @@ const cyan = '\x1b[36m';
 const magenta = '\x1b[35m';
 const blue = '\x1b[34m';
 
-function printHeader() {
-  console.log(`\n${cyan}╭────────────────────────────────────────────────────────╮${reset}`);
-  console.log(`${cyan}│${reset}  ${bold}${cyan}⚡ ANTIGRAVITY CONTEXT TRACKER CLI${reset} ${dim}v0.6.0${reset}              ${cyan}│${reset}`);
-  console.log(`${cyan}╰────────────────────────────────────────────────────────╯${reset}`);
+function formatTokens(tokens: number): string {
+  if (tokens >= 1000000) return (tokens / 1000000).toFixed(1) + 'M';
+  if (tokens >= 1000) return (tokens / 1000).toFixed(1) + 'k';
+  return tokens.toString();
+}
+
+function printHeader(sessionShortId = '', time = '') {
+  const title = `${bold}${cyan}⚡ Antigravity Context${reset} ${dim}v0.6.1${reset}`;
+  const rightMeta = sessionShortId ? `${dim}Session: ${cyan}${sessionShortId}${reset} ${dim}(${time})${reset}` : '';
+  console.log(`\n ${title}  ${rightMeta}`);
+  console.log(` ${dim}─────────────────────────────────────────────────────────────────────────${reset}`);
 }
 
 function printStatus(analysis: AnalysisResult) {
   const t = analysis.tokens;
   const limit = t.limitTokens;
   const pct = t.percentageUsed;
+  const limitFmt = formatTokens(limit);
+  const totalFmt = formatTokens(t.totalTokens);
 
-  const limitFormatted = limit >= 1000000 
-    ? (limit / 1000000).toFixed(1) + 'M' 
-    : (limit / 1000).toFixed(0) + 'k';
-
-  // 24-slot visual progress bar
-  const totalSlots = 24;
+  // 36-slot high-resolution visual progress bar
+  const totalSlots = 36;
   const filledBars = Math.min(totalSlots, Math.max(0, Math.round((pct / 100) * totalSlots)));
   const emptyBars = totalSlots - filledBars;
   const barColor = pct >= 70 ? red : pct >= 50 ? yellow : green;
-  const progressBar = `${barColor}[${'█'.repeat(filledBars)}${'░'.repeat(emptyBars)}]${reset}`;
+  const progressBar = `${barColor}${'█'.repeat(filledBars)}${dim}${'░'.repeat(emptyBars)}${reset}`;
 
-  console.log(`${bold}  Active Session :${reset} ${cyan}${analysis.sessionId}${reset}`);
-  console.log(`${bold}  Detected Model :${reset} ${magenta}${analysis.modelName}${reset} ${dim}(${analysis.modelCapability.family} - ${limitFormatted} max)${reset}`);
-  console.log(`${bold}  Last Active    :${reset} ${analysis.lastUpdated}`);
-  console.log(`${bold}  Context Usage  :${reset} ${bold}${t.totalTokens.toLocaleString()}${reset} / ${limitFormatted} tokens (${pct}%)`);
-  console.log(`${bold}  Capacity Gauge :${reset} ${progressBar} ${analysis.riskMessage}\n`);
+  const shortSession = analysis.sessionId.length > 8 ? analysis.sessionId.substring(0, 8) : analysis.sessionId;
+  printHeader(shortSession, analysis.lastUpdated);
 
-  console.log(`${dim}  ┌─ Context Composition ──────────────────────────────┐${reset}`);
-  console.log(`  ${dim}│${reset} ${magenta}●${reset} System Rules & Skills : ${t.systemPromptTokens.toLocaleString().padStart(8)} tokens       ${dim}│${reset}`);
-  console.log(`  ${dim}│${reset} ${blue}●${reset} User Prompts          : ${t.userPromptTokens.toLocaleString().padStart(8)} tokens       ${dim}│${reset}`);
-  console.log(`  ${dim}│${reset} ${green}●${reset} Assistant Responses   : ${t.modelOutputTokens.toLocaleString().padStart(8)} tokens       ${dim}│${reset}`);
-  console.log(`  ${dim}│${reset} ${yellow}●${reset} Tool Output Buffers   : ${t.toolOutputTokens.toLocaleString().padStart(8)} tokens       ${dim}│${reset}`);
-  console.log(`${dim}  └────────────────────────────────────────────────────┘${reset}`);
+  // Core Status Row
+  const riskDot = pct >= 70 ? `${red}● High Risk${reset}` : pct >= 50 ? `${yellow}● Moderate${reset}` : `${green}● Optimal Recall${reset}`;
+  console.log(`  ${dim}Model${reset}   ${magenta}${analysis.modelName}${reset} ${dim}(${analysis.modelCapability.family} · ${limitFmt} max)${reset}`);
+  console.log(`  ${dim}Usage${reset}   ${bold}${t.totalTokens.toLocaleString()}${reset} ${dim}/ ${limitFmt} tokens${reset}  ${dim}(${pct}%)${reset}   ${riskDot}`);
+  console.log(`  [${progressBar}] ${bold}${pct}%${reset}\n`);
 
+  // Memory Breakdown (Inline clean badges)
+  const calcPct = (val: number) => t.totalTokens > 0 ? Math.round((val / t.totalTokens) * 100) : 0;
+  console.log(`  ${dim}Memory Breakdown${reset}`);
+  console.log(`    ${magenta}●${reset} System  ${formatTokens(t.systemPromptTokens).padEnd(6)} ${dim}(${calcPct(t.systemPromptTokens)}%)${reset}   ${blue}●${reset} Prompts  ${formatTokens(t.userPromptTokens).padEnd(6)} ${dim}(${calcPct(t.userPromptTokens)}%)${reset}`);
+  console.log(`    ${green}●${reset} Model   ${formatTokens(t.modelOutputTokens).padEnd(6)} ${dim}(${calcPct(t.modelOutputTokens)}%)${reset}   ${yellow}●${reset} Tools    ${formatTokens(t.toolOutputTokens).padEnd(6)} ${dim}(${calcPct(t.toolOutputTokens)}%)${reset}\n`);
+
+  // Active Files in compact 2-column grid
   if (analysis.activeFiles.length > 0) {
-    console.log(`\n${bold}  Active Workspace Files & State Deltas:${reset}`);
-    analysis.activeFiles.slice(0, 8).forEach(f => {
-      let tag = `${dim}[REF]${reset}`;
-      if (f.status === 'CREATED') tag = `${green}[NEW]${reset}`;
-      else if (f.status === 'MODIFIED') tag = `${yellow}[MOD]${reset}`;
-      console.log(`    ${tag} ${cyan}${f.filename.padEnd(24)}${reset} ${dim}(${f.count} refs)${reset}`);
-    });
+    console.log(`  ${dim}Active Workspace Files${reset}`);
+    const files = analysis.activeFiles.slice(0, 6);
+    for (let i = 0; i < files.length; i += 2) {
+      const f1 = files[i];
+      const f2 = files[i + 1];
+
+      const renderFile = (f: typeof f1) => {
+        if (!f) return '';
+        let tag = `${dim}REF${reset}`;
+        if (f.status === 'CREATED') tag = `${green}NEW${reset}`;
+        else if (f.status === 'MODIFIED') tag = `${yellow}MOD${reset}`;
+        const name = f.filename.length > 20 ? f.filename.substring(0, 18) + '..' : f.filename;
+        return `  ${tag} ${cyan}${name.padEnd(21)}${reset} ${dim}(${f.count})${reset}`;
+      };
+
+      const col1 = renderFile(f1).padEnd(36);
+      const col2 = f2 ? renderFile(f2) : '';
+      console.log(`  ${col1}${col2}`);
+    }
+    console.log('');
   }
 
+  // Executed Tools in clean inline summary
   if (analysis.toolStats.length > 0) {
-    console.log(`\n${bold}  Executed Tools Summary:${reset}`);
-    const toolsStr = analysis.toolStats.slice(0, 6).map(ts => `${ts.toolName} (${ts.count})`).join(', ');
-    console.log(`    ${dim}${toolsStr}${reset}`);
+    const toolsStr = analysis.toolStats.slice(0, 5).map(ts => `${cyan}${ts.toolName}${reset} ${dim}(${ts.count})${reset}`).join(' · ');
+    console.log(`  ${dim}Tools${reset}   ${toolsStr}`);
   }
 
-  console.log(`\n${dim}────────────────────────────────────────────────────────${reset}\n`);
+  console.log(` ${dim}─────────────────────────────────────────────────────────────────────────${reset}\n`);
 }
 
 function handleStatus(watcher: TranscriptWatcher) {
-  printHeader();
   const { steps, session } = watcher.readActiveSteps();
   if (!session) {
-    console.log(`${yellow}  No active Antigravity session found in brain store.${reset}\n`);
+    printHeader();
+    console.log(`  ${yellow}No active Antigravity session found in brain store.${reset}\n`);
     return;
   }
 
@@ -84,122 +105,125 @@ function handleStatus(watcher: TranscriptWatcher) {
 }
 
 function handleCompact(watcher: TranscriptWatcher) {
-  printHeader();
   const { steps, session } = watcher.readActiveSteps();
   if (!session) {
-    console.log(`${yellow}  No active Antigravity session found to compact.${reset}\n`);
+    printHeader();
+    console.log(`  ${yellow}No active Antigravity session found to compact.${reset}\n`);
     return;
   }
 
   const analysis = ContextAnalyzer.analyze(steps, session);
-  console.log(`  ${bold}Target Session:${reset} ${cyan}${session.id}${reset}`);
+  printHeader(session.id.substring(0, 8), new Date().toLocaleTimeString());
+
   console.log(`  ${dim}Applying Next-Gen Smart Hybrid Compaction on disk...${reset}\n`);
 
   const result = ContextCompacter.compactInPlace(steps, session, analysis, 3);
 
-  console.log(`  ${green}${bold}✔ Smart Hybrid Compaction Successful!${reset}`);
-  console.log(`    ${bold}Original Tokens   :${reset} ${result.originalTokens.toLocaleString()} tokens`);
-  console.log(`    ${bold}New Tokens        :${reset} ${green}${result.compactTokens.toLocaleString()} tokens${reset}`);
-  console.log(`    ${bold}Reclaimed Space   :${reset} ${green}${bold}${result.reclaimedTokens.toLocaleString()} tokens (${result.reclaimedPercentage}% reduction)${reset}`);
-  console.log(`    ${bold}Turn-Aware State  :${reset} Preserved last ${result.preservedRecentTurnsCount} complete turns (${result.preservedRecentStepsCount} steps) 100% intact`);
-  console.log(`    ${bold}Stubbed Observers :${reset} ${result.stubbedObservationsCount} heavy tool payloads condensed`);
-  console.log(`    ${bold}Safety Backup     :${reset} ${dim}${result.backupPath}${reset}\n`);
-  console.log(`  ${green}Antigravity App context is refreshed with fresh capacity!${reset}\n`);
+  console.log(`  ${green}${bold}✔ Smart Hybrid Compaction Applied!${reset}`);
+  console.log(`    ${dim}Original  :${reset} ${result.originalTokens.toLocaleString()} tokens`);
+  console.log(`    ${dim}Compacted :${reset} ${green}${bold}${result.compactTokens.toLocaleString()} tokens${reset}`);
+  console.log(`    ${dim}Reclaimed :${reset} ${green}${bold}${result.reclaimedTokens.toLocaleString()} tokens (${result.reclaimedPercentage}% reduction)${reset}`);
+  console.log(`    ${dim}Turns Kept:${reset} ${result.preservedRecentTurnsCount} complete conversational turns (${result.preservedRecentStepsCount} steps) 100% intact`);
+  console.log(`    ${dim}Backup    :${reset} ${dim}${result.backupPath}${reset}\n`);
+  console.log(`  ${dim}Antigravity App context is refreshed with fresh capacity.${reset}`);
+  console.log(` ${dim}─────────────────────────────────────────────────────────────────────────${reset}\n`);
 }
 
 function handleUndo(watcher: TranscriptWatcher) {
-  printHeader();
   const session = watcher.getActiveSession();
   if (!session) {
-    console.log(`${yellow}  No active session found.${reset}\n`);
+    printHeader();
+    console.log(`  ${yellow}No active session found.${reset}\n`);
     return;
   }
 
-  console.log(`  ${bold}Active Session:${reset} ${cyan}${session.id}${reset}`);
+  printHeader(session.id.substring(0, 8), new Date().toLocaleTimeString());
   console.log(`  ${dim}Restoring from latest safety backup...${reset}\n`);
 
   const res = ContextCompacter.restoreBackup(session);
   if (res.success) {
-    console.log(`  ${green}${bold}✔ Session Restored!${reset}`);
+    console.log(`  ${green}${bold}✔ Session Restored Successfully!${reset}`);
     console.log(`  ${dim}${res.message}${reset}\n`);
     const { steps } = watcher.readActiveSteps();
     const analysis = ContextAnalyzer.analyze(steps, session);
-    console.log(`  ${bold}Restored Tokens:${reset} ${analysis.tokens.totalTokens.toLocaleString()} tokens across ${steps.length} steps.\n`);
+    console.log(`  ${dim}Restored State:${reset} ${bold}${analysis.tokens.totalTokens.toLocaleString()}${reset} tokens across ${steps.length} steps.`);
   } else {
-    console.log(`  ${red}${bold}✖ Restore Failed:${reset} ${res.message}\n`);
+    console.log(`  ${red}${bold}✖ Restore Failed:${reset} ${res.message}`);
   }
+  console.log(`\n ${dim}─────────────────────────────────────────────────────────────────────────${reset}\n`);
 }
 
 function handleClean(watcher: TranscriptWatcher) {
-  printHeader();
   const session = watcher.getActiveSession();
   if (!session) {
-    console.log(`${yellow}  No active session found.${reset}\n`);
+    printHeader();
+    console.log(`  ${yellow}No active session found.${reset}\n`);
     return;
   }
 
+  printHeader(session.id.substring(0, 8), new Date().toLocaleTimeString());
   const logsDir = path.dirname(session.transcriptPath);
   const deletedCount = ContextCompacter.pruneOldBackups(logsDir, 2);
 
   if (deletedCount > 0) {
-    console.log(`  ${green}${bold}✔ Cleaned up ${deletedCount} older backup files.${reset}`);
+    console.log(`  ${green}${bold}✔ Cleaned up ${deletedCount} older backup files to save disk space.${reset}`);
   } else {
     console.log(`  ${dim}Backup storage is clean. Kept latest active safety backups.${reset}`);
   }
-  console.log(`\n${dim}────────────────────────────────────────────────────────${reset}\n`);
+  console.log(`\n ${dim}─────────────────────────────────────────────────────────────────────────${reset}\n`);
 }
 
 function handleInspect(watcher: TranscriptWatcher) {
-  printHeader();
   const { steps, session } = watcher.readActiveSteps();
   if (!session || steps.length === 0) {
-    console.log(`${yellow}  No active conversation steps found.${reset}\n`);
+    printHeader();
+    console.log(`  ${yellow}No active conversation steps found.${reset}\n`);
     return;
   }
 
   const analysis = ContextAnalyzer.analyze(steps, session);
-  const bloatItems = ContextAnalyzer.inspectBloat(steps, 6);
+  const bloatItems = ContextAnalyzer.inspectBloat(steps, 5);
 
-  console.log(`  ${bold}Session:${reset} ${cyan}${session.id}${reset} ${dim}(Total: ${analysis.tokens.totalTokens.toLocaleString()} tokens)${reset}\n`);
-  console.log(`  ${bold}🔍 Top Token-Consuming Steps (Bloat Diagnosis):${reset}\n`);
+  printHeader(session.id.substring(0, 8), analysis.lastUpdated);
+  console.log(`  ${dim}Total Context: ${bold}${analysis.tokens.totalTokens.toLocaleString()} tokens${reset} ${dim}across ${steps.length} steps${reset}\n`);
+  console.log(`  ${bold}Top Token-Consuming Observations:${reset}\n`);
 
   bloatItems.forEach((b, idx) => {
     const pctOfTotal = ((b.tokens / analysis.tokens.totalTokens) * 100).toFixed(1);
-    const label = b.toolName ? `Tool: ${b.toolName}` : b.type;
-    const target = b.target ? ` -> ${dim}${b.target}${reset}` : '';
+    const label = b.toolName ? `${cyan}${b.toolName}${reset}` : `${magenta}${b.type}${reset}`;
+    const target = b.target ? ` ${dim}→ ${b.target}${reset}` : '';
 
-    console.log(`  ${bold}#${idx + 1} [Step #${b.stepIndex}]${reset} ${yellow}${b.tokens.toLocaleString()} tokens${reset} ${dim}(${pctOfTotal}% of total)${reset}`);
-    console.log(`     ${cyan}${label}${reset}${target}`);
-    console.log(`     ${dim}Snippet: ${b.snippet}${reset}\n`);
+    console.log(`  ${dim}#${idx + 1}${reset}  [Step #${b.stepIndex}]  ${yellow}${b.tokens.toLocaleString()} tokens${reset} ${dim}(${pctOfTotal}%)${reset}  ${label}${target}`);
+    console.log(`      ${dim}${b.snippet}${reset}\n`);
   });
 
-  console.log(`  ${dim}💡 Tip: Run 'ag-context compact' to condense older heavy tool logs.${reset}\n`);
-  console.log(`${dim}────────────────────────────────────────────────────────${reset}\n`);
+  console.log(`  ${dim}💡 Tip: Run 'ag-context compact' to condense older heavy tool logs.${reset}`);
+  console.log(` ${dim}─────────────────────────────────────────────────────────────────────────${reset}\n`);
 }
 
 function handleList(watcher: TranscriptWatcher) {
   printHeader();
   const sessions = watcher.listSessions();
   if (sessions.length === 0) {
-    console.log(`${yellow}  No sessions found in ~/.gemini/antigravity/brain.${reset}\n`);
+    console.log(`  ${yellow}No sessions found in ~/.gemini/antigravity/brain.${reset}\n`);
     return;
   }
 
   console.log(`  ${bold}Recent Conversation Sessions (${sessions.length} total):${reset}\n`);
-  sessions.slice(0, 10).forEach((s, idx) => {
+  sessions.slice(0, 8).forEach((s, idx) => {
     const isCurrent = idx === 0 ? ` ${green}[ACTIVE]${reset}` : '';
-    console.log(`  ${bold}[${idx + 1}]${reset} ${cyan}${s.id}${reset}${isCurrent}`);
-    console.log(`      ${dim}Last modified: ${s.lastActivity.toLocaleString()}${reset}`);
+    const shortId = s.id.length > 12 ? s.id.substring(0, 12) + '..' : s.id;
+    console.log(`  ${dim}[${idx + 1}]${reset}  ${cyan}${shortId.padEnd(16)}${reset} ${dim}${s.lastActivity.toLocaleDateString()} ${s.lastActivity.toLocaleTimeString()}${reset}${isCurrent}`);
   });
-  console.log(`\n  ${dim}💡 Tip: Run 'ag-context switch <number>' to switch active session.${reset}\n`);
-  console.log(`${dim}────────────────────────────────────────────────────────${reset}\n`);
+  console.log(`\n  ${dim}💡 Tip: Run 'ag-context switch <number>' to change tracked session.${reset}`);
+  console.log(` ${dim}─────────────────────────────────────────────────────────────────────────${reset}\n`);
 }
 
 function handleSwitch(watcher: TranscriptWatcher, arg?: string) {
-  printHeader();
   const sessions = watcher.listSessions();
   if (sessions.length === 0) {
-    console.log(`${yellow}  No sessions found.${reset}\n`);
+    printHeader();
+    console.log(`  ${yellow}No sessions found.${reset}\n`);
     return;
   }
 
@@ -210,8 +234,10 @@ function handleSwitch(watcher: TranscriptWatcher, arg?: string) {
     }
     const targetSession = sessions[index - 1];
     watcher.setActiveSessionId(targetSession.id, true);
+    printHeader(targetSession.id.substring(0, 8));
     console.log(`  ${green}${bold}✔ Switched active tracked session to:${reset}`);
     console.log(`  ${cyan}${targetSession.id}${reset} ${dim}(Last modified: ${targetSession.lastActivity.toLocaleString()})${reset}\n`);
+    console.log(` ${dim}─────────────────────────────────────────────────────────────────────────${reset}\n`);
   };
 
   if (arg && !isNaN(parseInt(arg, 10))) {
@@ -219,9 +245,11 @@ function handleSwitch(watcher: TranscriptWatcher, arg?: string) {
     return;
   }
 
+  printHeader();
   console.log(`  ${bold}Select a session to track:${reset}\n`);
-  sessions.slice(0, 8).forEach((s, idx) => {
-    console.log(`  ${bold}[${idx + 1}]${reset} ${cyan}${s.id}${reset} ${dim}(${s.lastActivity.toLocaleTimeString()})${reset}`);
+  sessions.slice(0, 6).forEach((s, idx) => {
+    const shortId = s.id.substring(0, 12) + '..';
+    console.log(`  ${dim}[${idx + 1}]${reset}  ${cyan}${shortId.padEnd(16)}${reset} ${dim}${s.lastActivity.toLocaleTimeString()}${reset}`);
   });
 
   const rl = readline.createInterface({
@@ -229,7 +257,7 @@ function handleSwitch(watcher: TranscriptWatcher, arg?: string) {
     output: process.stdout
   });
 
-  rl.question(`\n  ${bold}Enter session number (1-${Math.min(8, sessions.length)}): ${reset}`, answer => {
+  rl.question(`\n  ${bold}Enter session number (1-${Math.min(6, sessions.length)}): ${reset}`, answer => {
     rl.close();
     const num = parseInt(answer.trim(), 10);
     switchToIndex(num);
@@ -238,16 +266,13 @@ function handleSwitch(watcher: TranscriptWatcher, arg?: string) {
 
 function handleWatch(watcher: TranscriptWatcher) {
   console.clear();
-  printHeader();
-  console.log(`  ${green}Live terminal HUD running. Press Ctrl+C to exit.${reset}\n`);
+  console.log(`\n  ${green}● LIVE STREAMING HUD MONITOR${reset} ${dim}(Press Ctrl+C to exit)${reset}`);
 
   const update = () => {
     watcher.checkForActiveSessionSwitch();
     const { steps, session } = watcher.readActiveSteps();
     if (session) {
       console.clear();
-      printHeader();
-      console.log(`  ${green}● LIVE STREAMING MONITOR${reset} ${dim}(Ctrl+C to exit)${reset}\n`);
       const analysis = ContextAnalyzer.analyze(steps, session);
       printStatus(analysis);
     }
@@ -259,26 +284,25 @@ function handleWatch(watcher: TranscriptWatcher) {
 
 function printHelp() {
   printHeader();
-  console.log(`${bold}Usage:${reset} ag-context [command] [options]\n`);
-  console.log(`${bold}Available Commands:${reset}`);
-  console.log(`  ${cyan}status${reset}   (default) Display context tokens, active model, and capacity gauge`);
-  console.log(`  ${cyan}compact${reset}  Apply smart hybrid compaction on disk (~85-95% token reduction)`);
-  console.log(`  ${cyan}undo${reset}     Restore raw un-compacted conversation from latest safety backup (.bak)`);
-  console.log(`  ${cyan}inspect${reset}  Diagnose token bloat (shows top token-consuming steps & files)`);
-  console.log(`  ${cyan}switch${reset}   Interactively switch active tracked conversation session`);
-  console.log(`  ${cyan}clean${reset}    Clean up older backup files to save disk storage`);
-  console.log(`  ${cyan}list${reset}     List all conversation sessions stored in Antigravity brain`);
-  console.log(`  ${cyan}watch${reset}    Live terminal dashboard streaming context in real-time`);
-  console.log(`  ${cyan}help${reset}     Show this help guide\n`);
-  console.log(`${bold}Examples:${reset}`);
-  console.log(`  ag-context compact      ${dim}# Smart-compact while using Antigravity Desktop App${reset}`);
-  console.log(`  ag-context undo         ${dim}# Instant rollback to raw history${reset}`);
-  console.log(`  ag-context inspect      ${dim}# Identify large tool/file bloat${reset}`);
-  console.log(`  ag-context clean        ${dim}# Free up backup disk space${reset}`);
-  console.log(`  ag-context watch        ${dim}# Real-time terminal HUD${reset}\n`);
+  console.log(`  ${bold}Usage:${reset} ag-context [command]\n`);
+  console.log(`  ${bold}Commands:${reset}`);
+  console.log(`    ${cyan}status${reset}    ${dim}(default)${reset} Display clean context metrics & capacity gauge`);
+  console.log(`    ${cyan}compact${reset}   Smart-compact conversation in-place (~85-95% token reduction)`);
+  console.log(`    ${cyan}undo${reset}      Rollback to raw uncompacted conversation from .bak`);
+  console.log(`    ${cyan}inspect${reset}   Diagnose token bloat (top token-consuming steps & files)`);
+  console.log(`    ${cyan}switch${reset}    Interactively switch tracked conversation session`);
+  console.log(`    ${cyan}clean${reset}     Prune older backup files to keep disk space minimal`);
+  console.log(`    ${cyan}list${reset}      List recent Antigravity conversation sessions`);
+  console.log(`    ${cyan}watch${reset}     Live terminal dashboard streaming in real-time`);
+  console.log(`    ${cyan}help${reset}      Show this guide\n`);
+  console.log(`  ${bold}Examples:${reset}`);
+  console.log(`    ag-context compact   ${dim}# Run while chatting in Antigravity App${reset}`);
+  console.log(`    ag-context inspect   ${dim}# Identify large tool/file bloat${reset}`);
+  console.log(`    ag-context undo      ${dim}# Instant rollback${reset}\n`);
+  console.log(` ${dim}─────────────────────────────────────────────────────────────────────────${reset}\n`);
 }
 
-// CLI Command Router
+// Command Router
 function main() {
   const args = process.argv.slice(2);
   const command = args[0] ? args[0].toLowerCase() : 'status';
