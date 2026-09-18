@@ -14,11 +14,15 @@ export interface CategoryBreakdown {
   percentageUsed: number;
 }
 
+export type FileActionStatus = 'CREATED' | 'MODIFIED' | 'VIEWED';
+
 export interface ReferencedFile {
   path: string;
   filename: string;
   count: number;
+  status: FileActionStatus;
 }
+
 
 export interface ToolUsageStat {
   toolName: string;
@@ -70,6 +74,7 @@ export class ContextAnalyzer {
     let systemPromptTokens = 8500;
 
     const fileMap = new Map<string, number>();
+    const fileStatusMap = new Map<string, FileActionStatus>();
     const toolMap = new Map<string, number>();
     const stepsSummary: AnalysisResult['stepsSummary'] = [];
 
@@ -104,6 +109,17 @@ export class ContextAnalyzer {
           toolMap.set(tName, (toolMap.get(tName) || 0) + 1);
 
           if (tc.arguments) {
+            const argTarget = tc.arguments.TargetFile || tc.arguments.AbsolutePath;
+            if (typeof argTarget === 'string') {
+              const cleanPath = path.normalize(argTarget.replace('file:///', ''));
+              if (tName === 'write_to_file') {
+                fileStatusMap.set(cleanPath, 'CREATED');
+              } else if (tName === 'replace_file_content' && fileStatusMap.get(cleanPath) !== 'CREATED') {
+                fileStatusMap.set(cleanPath, 'MODIFIED');
+              } else if (!fileStatusMap.has(cleanPath)) {
+                fileStatusMap.set(cleanPath, 'VIEWED');
+              }
+            }
             this.extractFilesFromText(JSON.stringify(tc.arguments), fileMap, fileRegex);
           }
         }
@@ -147,10 +163,12 @@ export class ContextAnalyzer {
       .map(([filePath, count]) => {
         const parts = filePath.split(/[/\\]/);
         const filename = parts[parts.length - 1] || filePath;
-        return { path: filePath, filename, count };
+        const status = fileStatusMap.get(filePath) || 'VIEWED';
+        return { path: filePath, filename, count, status };
       })
       .sort((a, b) => b.count - a.count)
       .slice(0, 12);
+
 
     const toolStats: ToolUsageStat[] = Array.from(toolMap.entries())
       .map(([toolName, count]) => ({ toolName, count }))

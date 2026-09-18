@@ -341,7 +341,37 @@ export function getWebviewContent(analysis: AnalysisResult | null): string {
       font-size: 9px;
     }
 
+    .file-tag {
+      display: inline-block;
+      font-size: 8px;
+      font-weight: 700;
+      padding: 1px 4px;
+      border-radius: 3px;
+      margin-right: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
+    .tag-new {
+      background: rgba(16, 185, 129, 0.2);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.4);
+    }
+
+    .tag-mod {
+      background: rgba(245, 158, 11, 0.2);
+      color: #fbbf24;
+      border: 1px solid rgba(245, 158, 11, 0.4);
+    }
+
+    .tag-ref {
+      background: rgba(148, 163, 184, 0.15);
+      color: #94a3b8;
+      border: 1px solid rgba(148, 163, 184, 0.25);
+    }
+
     /* Tools Summary */
+
     .tool-pills {
       display: flex;
       flex-wrap: wrap;
@@ -444,12 +474,18 @@ export function getWebviewContent(analysis: AnalysisResult | null): string {
       const riskClass = 'risk-' + (data.riskLevel || 'LOW');
 
 
-      const filesHtml = (data.activeFiles || []).map(f => \`
+      const filesHtml = (data.activeFiles || []).map(f => {
+        let tagClass = 'tag-ref';
+        let tagText = 'REF';
+        if (f.status === 'CREATED') { tagClass = 'tag-new'; tagText = 'NEW'; }
+        else if (f.status === 'MODIFIED') { tagClass = 'tag-mod'; tagText = 'MOD'; }
+        return \`
         <div class="file-card" title="\${f.path}">
-          <span class="file-path">📄 \${f.filename}</span>
+          <span class="file-path"><span class="file-tag \${tagClass}">\${tagText}</span>📄 \${f.filename}</span>
           <span class="ref-badge">\${f.count} refs</span>
         </div>
-      \`).join('');
+      \`;
+      }).join('');
 
       const toolsHtml = (data.toolStats || []).map(ts => \`
         <span class="tool-pill">\${ts.toolName} (\${ts.count})</span>
@@ -470,7 +506,7 @@ export function getWebviewContent(analysis: AnalysisResult | null): string {
           <div class="brand-row">
             <div class="brand-title">
               ⚡ Context Tracker
-              <span class="version-tag">v0.5.0</span>
+              <span class="version-tag">v0.6.0</span>
             </div>
 
             <div class="live-badge">
