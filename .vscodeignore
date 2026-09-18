@@ -1,0 +1,8 @@
+.vscode/**
+.git/**
+src/**
+out/test/**
+**/*.map
+**/*.ts
+*.vsix
+*.log

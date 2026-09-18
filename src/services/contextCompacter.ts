@@ -160,7 +160,7 @@ ${keyMilestones.slice(-6).map(m => `> ${m.replace(/\n/g, '\n> ')}`).join('\n\n')
       try {
         fs.copyFileSync(transcriptPath, backupPath);
         fs.copyFileSync(transcriptPath, standardBackupPath);
-        this.pruneOldBackups(logsDir, 5);
+        this.pruneOldBackups(logsDir, 2);
       } catch (e) {
         console.error('Failed to create transcript safety backup:', e);
       }
@@ -193,7 +193,8 @@ ${keyMilestones.slice(-6).map(m => `> ${m.replace(/\n/g, '\n> ')}`).join('\n\n')
     const reclaimedTokens = Math.max(0, analysis.tokens.totalTokens - compactTokens);
     const reclaimedPercentage = Math.max(0, Math.round((reclaimedTokens / analysis.tokens.totalTokens) * 100));
 
-    const markdown = `# Smart Hybrid Context Compaction Digest (v0.6.0)
+    const markdown = `# Smart Hybrid Context Compaction Digest (v0.7.0)
+
 
 > [!NOTE]
 > **Active Conversation Tab Compacted Safely!**
@@ -270,8 +271,9 @@ ${continuationPrompt}
   /**
    * Prunes older backup files to avoid consuming excessive disk space (keeps maxBackups)
    */
-  public static pruneOldBackups(logsDir: string, maxBackups = 5): number {
+  public static pruneOldBackups(logsDir: string, maxBackups = 2): number {
     if (!fs.existsSync(logsDir)) return 0;
+
 
     try {
       const entries = fs.readdirSync(logsDir);

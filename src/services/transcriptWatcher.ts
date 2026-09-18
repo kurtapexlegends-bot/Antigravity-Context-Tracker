@@ -160,28 +160,42 @@ export class TranscriptWatcher {
 
     try {
       const stats = fs.statSync(session.transcriptPath);
-      if (stats.size === this.lastReadSize && this.cachedSteps.length > 0) {
+      if (stats.size === this.lastReadSize && (this as any).lastReadMtime === stats.mtimeMs && this.cachedSteps.length > 0) {
         return { steps: this.cachedSteps, session };
       }
 
       const rawContent = fs.readFileSync(session.transcriptPath, 'utf-8');
-      const lines = rawContent.split(/\r?\n/).filter(line => line.trim().length > 0);
       const steps: TranscriptStep[] = [];
+      let start = 0;
+      const len = rawContent.length;
 
-      for (const line of lines) {
-        try {
-          steps.push(JSON.parse(line));
-        } catch (err) {
-          // ignore incomplete/corrupted lines
+      // Fast streaming line scan without allocating massive intermediate arrays
+      for (let i = 0; i < len; i++) {
+        if (rawContent.charCodeAt(i) === 10) { // '\n'
+          const line = rawContent.substring(start, i).trim();
+          start = i + 1;
+          if (line.length > 0) {
+            try {
+              steps.push(JSON.parse(line));
+            } catch (err) {}
+          }
+        }
+      }
+      if (start < len) {
+        const line = rawContent.substring(start).trim();
+        if (line.length > 0) {
+          try { steps.push(JSON.parse(line)); } catch (err) {}
         }
       }
 
       this.lastReadSize = stats.size;
+      (this as any).lastReadMtime = stats.mtimeMs;
       this.cachedSteps = steps;
       return { steps, session };
     } catch (error) {
       return { steps: this.cachedSteps, session };
     }
+
   }
 
   private restartWatch() {

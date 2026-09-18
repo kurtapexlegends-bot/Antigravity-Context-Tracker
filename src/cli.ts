@@ -24,8 +24,9 @@ function formatTokens(tokens: number): string {
 }
 
 function printHeader(sessionShortId = '', time = '') {
-  const title = `${bold}${cyan}⚡ Antigravity Context${reset} ${dim}v0.6.1${reset}`;
+  const title = `${bold}${cyan}⚡ Antigravity Context${reset} ${dim}v0.7.0${reset}`;
   const rightMeta = sessionShortId ? `${dim}Session: ${cyan}${sessionShortId}${reset} ${dim}(${time})${reset}` : '';
+
   console.log(`\n ${title}  ${rightMeta}`);
   console.log(` ${dim}─────────────────────────────────────────────────────────────────────────${reset}`);
 }
